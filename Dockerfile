@@ -2,6 +2,10 @@ FROM ubuntu:22.04
 #FROM ubuntu:18.04
 CMD bash
 
+# proxy settings
+ENV http_proxy=http://host.docker.internal:30270
+ENV https_proxy=http://host.docker.internal:30270
+
 # Install Ubuntu packages.
 # Please add packages in alphabetical order.
 ARG DEBIAN_FRONTEND=noninteractive
