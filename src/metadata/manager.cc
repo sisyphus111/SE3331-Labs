@@ -99,9 +99,12 @@ auto InodeManager::allocate_inode(InodeType type, block_id_t bid)
       // 3. Return the id of the allocated inode.
       //    You may have to use the `RAW_2_LOGIC` macro
       //    to get the result inode id.
-      Inode *inode = new Inode(type, bm->block_size());
-      bm->write_block(bid, reinterpret_cast<u8 *>(inode));
-      delete inode;
+      auto inode = Inode(type, bm->block_size());
+      u8 *buffer = new u8[bm->block_size()];
+      inode.flush_to_buffer(buffer);
+      bm->write_block(bid, buffer);
+      delete[] buffer;
+      
       auto inode_table_idx = count * bm->block_size() * KBitsPerByte + free_idx.value();
       this->set_table(inode_table_idx, bid);
 

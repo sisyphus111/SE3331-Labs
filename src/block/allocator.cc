@@ -98,7 +98,7 @@ auto BlockAllocator::allocate() -> ChfsResult<block_id_t> {
 
   for (uint i = 0; i < this->bitmap_block_cnt; i++) {
     bm->read_block(i + this->bitmap_block_id, buffer.data());
-
+    auto bitmap = Bitmap(buffer.data(), bm->block_size());
     // The index of the allocated bit inside current bitmap block.
     std::optional<block_id_t> res = std::nullopt;
 
@@ -107,22 +107,17 @@ auto BlockAllocator::allocate() -> ChfsResult<block_id_t> {
 
       // TODO: Find the first free bit of current bitmap block
       // and store it in `res`.
-      for (usize j = 0; j < this->last_block_num; j++) {
-        if (!Bitmap(buffer.data(), bm->block_size()).check(j)) {
-          res = static_cast<block_id_t>(j);
-          break;
-        }
-      }
+      auto first_free_res = bitmap.find_first_free_w_bound(this->last_block_num);
+      if (first_free_res.has_value()) 
+        res = std::optional<block_id_t>(first_free_res.value());
+
     } else {
 
       // TODO: Find the first free bit of current bitmap block
       // and store it in `res`.
-      for (usize j = 0; j < total_bits_per_block; j++) {
-        if (!Bitmap(buffer.data(), bm->block_size()).check(j)) {
-          res = static_cast<block_id_t>(j);
-          break;
-        }
-      }
+      auto first_free_res = bitmap.find_first_free();
+      if (first_free_res.has_value()) 
+        res = std::optional<block_id_t>(first_free_res.value());
     }
 
     // If we find one free bit inside current bitmap block.
@@ -140,10 +135,9 @@ auto BlockAllocator::allocate() -> ChfsResult<block_id_t> {
       // However, since we have ensured that there is at least one free bit
       // in the current block, we don't need to consider the case that
       // `res.value()` is out of range.
-      Bitmap bitmap(buffer.data(), bm->block_size());
       bitmap.set(res.value());
       bm->write_block(i + this->bitmap_block_id, buffer.data());
-      retval = res.value();
+      retval = i * total_bits_per_block + res.value();
 
       return ChfsResult<block_id_t>(retval);
     }
