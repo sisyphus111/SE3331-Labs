@@ -86,7 +86,6 @@ auto InodeManager::allocate_inode(InodeType type, block_id_t bid)
 
     if (free_idx) {
       // If there is an available inode ID.
-
       // Setup the bitmap.
       bitmap.set(free_idx.value());
       auto res = iter.flush_cur_block();
@@ -100,7 +99,14 @@ auto InodeManager::allocate_inode(InodeType type, block_id_t bid)
       // 3. Return the id of the allocated inode.
       //    You may have to use the `RAW_2_LOGIC` macro
       //    to get the result inode id.
-      UNIMPLEMENTED();
+      Inode *inode = new Inode(type, bm->block_size());
+      bm->write_block(bid, reinterpret_cast<u8 *>(inode));
+      delete inode;
+      auto inode_table_idx = count * bm->block_size() * KBitsPerByte + free_idx.value();
+      this->set_table(inode_table_idx, bid);
+
+      // why use 'RAW_2_LOGIC' macro?
+      return ChfsResult<inode_id_t>(RAW_2_LOGIC(inode_table_idx));
     }
   }
 
@@ -113,7 +119,10 @@ auto InodeManager::set_table(inode_id_t idx, block_id_t bid) -> ChfsNullResult {
   // TODO: Implement this function.
   // Fill `bid` into the inode table entry
   // whose index is `idx`.
-  UNIMPLEMENTED();
+  this->bm->write_partial_block(1 + idx / (bm->block_size() / sizeof(block_id_t)),
+                                 reinterpret_cast<u8 *>(&bid),
+                                 (idx % (bm->block_size() / sizeof(block_id_t))) * sizeof(block_id_t),
+                                 sizeof(block_id_t));
 
   return KNullOk;
 }
@@ -127,8 +136,10 @@ auto InodeManager::get(inode_id_t id) -> ChfsResult<block_id_t> {
   // from the inode table. You may have to use
   // the macro `LOGIC_2_RAW` to get the inode
   // table index.
-  UNIMPLEMENTED();
-
+  u8 *buffer = new u8[bm->block_size()];
+  auto raw_id = LOGIC_2_RAW(id);
+  bm->read_block(1 + raw_id / (bm->block_size() / sizeof(block_id_t)), buffer);
+  res_block_id = *(reinterpret_cast<block_id_t *>(buffer) + (raw_id % (bm->block_size() / sizeof(block_id_t))));
   return ChfsResult<block_id_t>(res_block_id);
 }
 
@@ -223,7 +234,18 @@ auto InodeManager::free_inode(inode_id_t id) -> ChfsNullResult {
   //    You may have to use macro `LOGIC_2_RAW`
   //    to get the index of inode table from `id`.
   // 2. Clear the inode bitmap.
-  UNIMPLEMENTED();
+  auto raw_id = LOGIC_2_RAW(id);
+  auto block_id = this->get(raw_id);
+  bm->zero_block(block_id.unwrap());
+
+  this->set_table(raw_id, KInvalidBlockID);
+  
+  u8 *buffer = new u8[bm->block_size()];
+  auto bitmap_block_id = 1 + n_table_blocks + raw_id / (bm->block_size() * KBitsPerByte);
+  bm->read_block(bitmap_block_id, buffer);
+  auto bitmap = Bitmap(buffer, bm->block_size());
+  bitmap.clear(raw_id % (bm->block_size() * KBitsPerByte));
+  bm->write_block(bitmap_block_id, buffer);
 
   return KNullOk;
 }
