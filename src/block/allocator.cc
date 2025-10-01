@@ -139,13 +139,11 @@ auto BlockAllocator::allocate() -> ChfsResult<block_id_t> {
       // then we actually only need to consider the first `last_block_num` bits.
       // However, since we have ensured that there is at least one free bit
       // in the current block, we don't need to consider the case that
-      // `*res` is out of range.
+      // `res.value()` is out of range.
       Bitmap bitmap(buffer.data(), bm->block_size());
-      bitmap.set(*res);
+      bitmap.set(res.value());
       bm->write_block(i + this->bitmap_block_id, buffer.data());
-      retval = i * total_bits_per_block + *res;
-      
-
+      retval = res.value();
 
       return ChfsResult<block_id_t>(retval);
     }
