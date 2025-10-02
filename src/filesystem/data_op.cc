@@ -70,6 +70,7 @@ auto FileOperation::write_file(inode_id_t id, const std::vector<u8> &content)
   // 1. read the inode
   std::vector<u8> inode(block_size);
   std::vector<u8> indirect_block(0);
+  // reserve() will not change the size of vector!!!!!
   indirect_block.reserve(block_size);
 
   auto inode_p = reinterpret_cast<Inode *>(inode.data());

@@ -238,17 +238,14 @@ auto InodeManager::free_inode(inode_id_t id) -> ChfsNullResult {
   //    to get the index of inode table from `id`.
   // 2. Clear the inode bitmap.
   auto raw_id = LOGIC_2_RAW(id);
-  auto block_id = this->get(raw_id);
-  bm->zero_block(block_id.unwrap());
-
   this->set_table(raw_id, KInvalidBlockID);
-  
-  u8 *buffer = new u8[bm->block_size()];
+
+  std::vector<u8> buffer(bm->block_size());
   auto bitmap_block_id = 1 + n_table_blocks + raw_id / (bm->block_size() * KBitsPerByte);
-  bm->read_block(bitmap_block_id, buffer);
-  auto bitmap = Bitmap(buffer, bm->block_size());
+  bm->read_block(bitmap_block_id, buffer.data());
+  auto bitmap = Bitmap(buffer.data(), bm->block_size());
   bitmap.clear(raw_id % (bm->block_size() * KBitsPerByte));
-  bm->write_block(bitmap_block_id, buffer);
+  bm->write_block(bitmap_block_id, buffer.data());
 
   return KNullOk;
 }

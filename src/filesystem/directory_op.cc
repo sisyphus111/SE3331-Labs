@@ -40,10 +40,13 @@ auto dir_list_to_string(const std::list<DirectoryEntry> &entries)
 auto append_to_directory(std::string src, std::string filename, inode_id_t id)
     -> std::string {
   // Append the new directory entry formatted as "name:inode"
+  std::ostringstream oss;
   if (!src.empty() && src.back() != '/') {
-    src.push_back('/');
+    // Add a separator if not present
+    oss << '/';
   }
-  src += filename + ":" + inode_id_to_string(id);
+  oss << filename << ":" << id;
+  src.append(oss.str());
   return src;
 }
 
@@ -193,7 +196,8 @@ auto FileOperation::unlink(inode_id_t parent, const char *name)
   if (rd.is_err()) {
     return ChfsNullResult(rd.unwrap_error());
   }
-  std::string dir_str(rd.unwrap().begin(), rd.unwrap().end());
+  std::vector<u8> dir_vec = rd.unwrap();
+  std::string dir_str(dir_vec.begin(), dir_vec.end());
   auto updated = rm_from_directory(dir_str, std::string(name));
   std::vector<u8> out(updated.begin(), updated.end());
   return this->write_file(parent, out);
