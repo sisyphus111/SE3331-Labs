@@ -243,3 +243,5 @@ docs/dev
 
 # Submission zip files
 *.zip
+*.tgz
+chfs.log
