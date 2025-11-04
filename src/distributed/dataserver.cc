@@ -15,12 +15,21 @@ auto DataServer::initialize(std::string const &data_path) {
   auto bm = std::shared_ptr<BlockManager>(
       new BlockManager(data_path, KDefaultBlockCnt));
   if (is_initialized) {
+    const usize versions_per_block = bm->block_size() / sizeof(version_t);
+    const usize need_version_blocks =
+        (bm->total_blocks() + versions_per_block - 1) / versions_per_block;
     block_allocator_ =
-        std::make_shared<BlockAllocator>(bm, 0, false);
+        std::make_shared<BlockAllocator>(bm, need_version_blocks, false);
   } else {
     // We need to reserve some blocks for storing the version of each block
+    const usize versions_per_block = bm->block_size() / sizeof(version_t);
+    const usize need_version_blocks =
+        (bm->total_blocks() + versions_per_block - 1) / versions_per_block;
     block_allocator_ = std::shared_ptr<BlockAllocator>(
-        new BlockAllocator(bm, 0, true));
+        new BlockAllocator(bm, need_version_blocks, true));
+    for (block_id_t i = 0; i < need_version_blocks; ++i) {
+      bm->zero_block(i);
+    }
   }
 
   // Initialize the RPC server and bind all handlers
