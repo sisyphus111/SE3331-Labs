@@ -303,8 +303,24 @@ auto MetadataServer::get_type_attr(inode_id_t id)
     return {0, 0, 0, 0, 0};
   auto [ty, attr] = ta.unwrap();
   if (ty == InodeType::FILE) {
-    auto mapping = get_block_map(id);
-    attr.size = mapping.size() * DiskBlockSize;
+    // 避免在持锁情况下再次调用会加同一把锁的 get_block_map，改为直接读取映射并计算块数
+    auto rd = operation_->read_file(id);
+    if (rd.is_ok()) {
+      auto bytes = rd.unwrap();
+      if (!bytes.empty()) {
+        try {
+          auto mapping =
+              deserialize_object<std::vector<BlockInfo>>(bytes);
+          attr.size = mapping.size() * DiskBlockSize;
+        } catch (...) {
+          attr.size = 0;
+        }
+      } else {
+        attr.size = 0;
+      }
+    } else {
+      attr.size = 0;
+    }
   }
   return {attr.size, attr.atime, attr.mtime, attr.ctime,
           ty == InodeType::Directory ? DirectoryType : RegularFileType};
