@@ -6,7 +6,7 @@ CMD bash
 # Please add packages in alphabetical order.
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get -y update && \
-    apt-get -y install \
+    apt-get -y install --fix-missing \
       build-essential \
       fuse libfuse-dev \
       sudo \
@@ -32,3 +32,7 @@ RUN cat /tmp/mypasswd | chpasswd
 USER stu
 
 WORKDIR /home/stu/
+
+# proxy settings
+ENV http_proxy=http://host.docker.internal:30270
+ENV https_proxy=http://host.docker.internal:30270
