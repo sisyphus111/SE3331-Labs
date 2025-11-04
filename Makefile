@@ -1,5 +1,12 @@
 .PHONY: unit-tests inte-tests clean
 
+build:
+	@if [ -d build ]; then rm -rf build; fi
+	@mkdir -p build
+	@cd build && cmake ..
+	@cd build && $(MAKE) -j
+	@cd build && $(MAKE) build-tests -j
+	
 unit-tests:
 	@if [ -d build ]; then rm -rf build; fi
 	@mkdir -p build
