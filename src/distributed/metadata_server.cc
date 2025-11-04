@@ -125,8 +125,7 @@ MetadataServer::MetadataServer(std::string const &address, u16 port,
 // {Your code here}
 auto MetadataServer::mknode(u8 type, inode_id_t parent, const std::string &name)
     -> inode_id_t {
-  static std::mutex mtx;
-  std::lock_guard<std::mutex> lk(mtx);
+  std::lock_guard<std::mutex> lk(mtx_);
   if (type == RegularFileType) {
     auto res = operation_->mkfile(parent, name.c_str());
     if (res.is_ok())
@@ -144,8 +143,7 @@ auto MetadataServer::mknode(u8 type, inode_id_t parent, const std::string &name)
 // {Your code here}
 auto MetadataServer::unlink(inode_id_t parent, const std::string &name)
     -> bool {
-  static std::mutex mtx;
-  std::lock_guard<std::mutex> lk(mtx);
+  std::lock_guard<std::mutex> lk(mtx_);
   // Lookup target inode
   auto lookup_res = operation_->lookup(parent, name.c_str());
   if (lookup_res.is_err())
@@ -185,6 +183,7 @@ auto MetadataServer::lookup(inode_id_t parent, const std::string &name)
 
 // {Your code here}
 auto MetadataServer::get_block_map(inode_id_t id) -> std::vector<BlockInfo> {
+  std::lock_guard<std::mutex> lk(mtx_);
   auto rd = operation_->read_file(id);
   if (rd.is_err())
     return {};
@@ -201,8 +200,7 @@ auto MetadataServer::get_block_map(inode_id_t id) -> std::vector<BlockInfo> {
 
 // {Your code here}
 auto MetadataServer::allocate_block(inode_id_t id) -> BlockInfo {
-  static std::mutex mtx;
-  std::lock_guard<std::mutex> lk(mtx);
+  std::lock_guard<std::mutex> lk(mtx_);
 
   if (num_data_servers == 0)
     return {0, 0, 0};
@@ -216,8 +214,19 @@ auto MetadataServer::allocate_block(inode_id_t id) -> BlockInfo {
   auto [block_id, version] =
       res.unwrap()->as<std::pair<block_id_t, version_t>>();
 
-  // Append mapping and persist
-  auto mapping = get_block_map(id);
+  // Append mapping and persist (read without calling get_block_map to avoid re-lock)
+  std::vector<BlockInfo> mapping;
+  auto rd = operation_->read_file(id);
+  if (rd.is_ok()) {
+    auto bytes = rd.unwrap();
+    if (!bytes.empty()) {
+      try {
+        mapping = deserialize_object<std::vector<BlockInfo>>(bytes);
+      } catch (...) {
+        mapping.clear();
+      }
+    }
+  }
   mapping.emplace_back(block_id, machine_id, version);
   auto bytes = serialize_object(mapping);
   if (operation_->write_file(id, bytes).is_err())
@@ -229,8 +238,7 @@ auto MetadataServer::allocate_block(inode_id_t id) -> BlockInfo {
 // {Your code here}
 auto MetadataServer::free_block(inode_id_t id, block_id_t block_id,
                                 mac_id_t machine_id) -> bool {
-  static std::mutex mtx;
-  std::lock_guard<std::mutex> lk(mtx);
+  std::lock_guard<std::mutex> lk(mtx_);
 
   auto it = clients_.find(machine_id);
   if (it == clients_.end())
@@ -240,7 +248,18 @@ auto MetadataServer::free_block(inode_id_t id, block_id_t block_id,
     return false;
 
   // update mapping
-  auto mapping = get_block_map(id);
+  std::vector<BlockInfo> mapping;
+  auto rd = operation_->read_file(id);
+  if (rd.is_ok()) {
+    auto bytes = rd.unwrap();
+    if (!bytes.empty()) {
+      try {
+        mapping = deserialize_object<std::vector<BlockInfo>>(bytes);
+      } catch (...) {
+        mapping.clear();
+      }
+    }
+  }
   bool removed = false;
   mapping.erase(std::remove_if(mapping.begin(), mapping.end(),
                                [&](const BlockInfo &bi) {
@@ -264,6 +283,7 @@ auto MetadataServer::free_block(inode_id_t id, block_id_t block_id,
 // {Your code here}
 auto MetadataServer::readdir(inode_id_t node)
     -> std::vector<std::pair<std::string, inode_id_t>> {
+  std::lock_guard<std::mutex> lk(mtx_);
   std::list<DirectoryEntry> list;
   if (read_directory(operation_.get(), node, list).is_err())
     return {};
@@ -277,6 +297,7 @@ auto MetadataServer::readdir(inode_id_t node)
 // {Your code here}
 auto MetadataServer::get_type_attr(inode_id_t id)
     -> std::tuple<u64, u64, u64, u64, u8> {
+  std::lock_guard<std::mutex> lk(mtx_);
   auto ta = operation_->get_type_attr(id);
   if (ta.is_err())
     return {0, 0, 0, 0, 0};
