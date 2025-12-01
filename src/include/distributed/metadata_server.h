@@ -18,6 +18,7 @@
 #include "metadata/manager.h"
 #include "filesystem/operations.h"
 #include "distributed/commit_log.h"
+#include <mutex>
 
 namespace chfs {
 
@@ -245,6 +246,7 @@ private:
   /**
    * {You can add anything you want here}
    */
+  std::mutex mtx_;
 };
 
 } // namespace chfs
