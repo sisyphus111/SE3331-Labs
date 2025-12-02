@@ -653,8 +653,10 @@ void RaftNode<StateMachine, Command>::handle_append_entries_reply(int node_id, c
         update_commit_index_locked();
     } else {
         int fallback = reply.next_index;
-        if (fallback <= log_base_index) {
-            fallback = log_base_index + 1;
+        // 允许 next_index 降到 <= log_base_index，这样 run_background_commit
+        // 才会触发 InstallSnapshot 分支；只需保证索引非负即可。
+        if (fallback < 0) {
+            fallback = 0;
         }
         next_index[node_id] = fallback;
     }
