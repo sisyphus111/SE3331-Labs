@@ -229,7 +229,7 @@ RaftNode<StateMachine, Command>::RaftNode(int node_id, std::vector<RaftNodeConfi
 
     std::filesystem::create_directories("/tmp/raft_log");
     log_file_path = (std::filesystem::path("/tmp/raft_log") / ("node_" + std::to_string(my_id) + ".bin")).string();
-    auto bm = std::make_shared<BlockManager>(log_file_path, 128);
+    auto bm = std::make_shared<BlockManager>(log_file_path);
     log_storage = std::make_unique<RaftLog<Command>>(bm);
 
     logs.clear();
