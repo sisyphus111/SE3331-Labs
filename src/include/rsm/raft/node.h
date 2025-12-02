@@ -738,17 +738,54 @@ template <typename StateMachine, typename Command>
 void RaftNode<StateMachine, Command>::send_request_vote(int target_id, RequestVoteArgs arg)
 {
     std::unique_lock<std::mutex> clients_lock(clients_mtx);
-    if (rpc_clients_map[target_id] == nullptr
-        || rpc_clients_map[target_id]->get_connection_state() != rpc::client::connection_state::connected) {
+    auto it = rpc_clients_map.find(target_id);
+    if (it == rpc_clients_map.end() || it->second == nullptr) {
         return;
     }
 
-    auto res = rpc_clients_map[target_id]->call(RAFT_RPC_REQUEST_VOTE, arg);
-    clients_lock.unlock();
-    if (res.is_ok()) {
-        handle_request_vote_reply(target_id, arg, res.unwrap()->as<RequestVoteReply>());
-    } else {
-        // RPC fails
+    // Reconnect if the underlying rpclib client has entered a disconnected/reset state
+    auto conn_state = it->second->get_connection_state();
+    if (conn_state == rpc::client::connection_state::disconnected
+        || conn_state == rpc::client::connection_state::reset) {
+        RaftNodeConfig target_cfg;
+        bool found = false;
+        for (auto &cfg : node_configs) {
+            if (cfg.node_id == target_id) {
+                target_cfg = cfg;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return;
+        }
+
+        RAFT_LOG("recreate RpcClient to %d for RequestVote, prev_conn_state=%d",
+                 target_id, static_cast<int>(conn_state));
+        it->second.reset();
+        try {
+            it->second = std::make_unique<RpcClient>(target_cfg.ip_address, target_cfg.port, true);
+        } catch (const std::exception &e) {
+            RAFT_LOG("recreate RpcClient to %d failed: %s", target_id, e.what());
+            return;
+        } catch (...) {
+            RAFT_LOG("recreate RpcClient to %d failed: unknown exception", target_id);
+            return;
+        }
+    }
+
+    try {
+        auto res = it->second->call(RAFT_RPC_REQUEST_VOTE, arg);
+        clients_lock.unlock();
+        if (res.is_ok()) {
+            handle_request_vote_reply(target_id, arg, res.unwrap()->as<RequestVoteReply>());
+        } else {
+            // RPC fails
+        }
+    } catch (const std::exception &e) {
+        RAFT_LOG("send_request_vote to %d exception: %s", target_id, e.what());
+    } catch (...) {
+        RAFT_LOG("send_request_vote to %d unknown exception", target_id);
     }
 }
 
@@ -756,18 +793,57 @@ template <typename StateMachine, typename Command>
 void RaftNode<StateMachine, Command>::send_append_entries(int target_id, AppendEntriesArgs<Command> arg)
 {
     std::unique_lock<std::mutex> clients_lock(clients_mtx);
-    if (rpc_clients_map[target_id] == nullptr 
-        || rpc_clients_map[target_id]->get_connection_state() != rpc::client::connection_state::connected) {
+    auto it = rpc_clients_map.find(target_id);
+    if (it == rpc_clients_map.end() || it->second == nullptr) {
         return;
     }
 
-    RpcAppendEntriesArgs rpc_arg = transform_append_entries_args(arg);
-    auto res = rpc_clients_map[target_id]->call(RAFT_RPC_APPEND_ENTRY, rpc_arg);
-    clients_lock.unlock();
-    if (res.is_ok()) {
-        handle_append_entries_reply(target_id, arg, res.unwrap()->as<AppendEntriesReply>());
-    } else {
-        // RPC fails
+    auto conn_state = it->second->get_connection_state();
+    if (conn_state == rpc::client::connection_state::disconnected
+        || conn_state == rpc::client::connection_state::reset) {
+        RaftNodeConfig target_cfg;
+        bool found = false;
+        for (auto &cfg : node_configs) {
+            if (cfg.node_id == target_id) {
+                target_cfg = cfg;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return;
+        }
+
+        RAFT_LOG("recreate RpcClient to %d for AppendEntries, prev_conn_state=%d",
+                 target_id, static_cast<int>(conn_state));
+        it->second.reset();
+        try {
+            it->second = std::make_unique<RpcClient>(target_cfg.ip_address, target_cfg.port, true);
+        } catch (const std::exception &e) {
+            RAFT_LOG("recreate RpcClient to %d failed: %s", target_id, e.what());
+            return;
+        } catch (...) {
+            RAFT_LOG("recreate RpcClient to %d failed: unknown exception", target_id);
+            return;
+        }
+    }
+
+    RAFT_LOG("send_append_entries to %d: prev_index=%d prev_term=%d entries=%zu leader_commit=%d",
+             target_id, arg.prev_log_index, arg.prev_log_term, arg.entries.size(), arg.leader_commit);
+
+    try {
+        RpcAppendEntriesArgs rpc_arg = transform_append_entries_args(arg);
+        auto res = it->second->call(RAFT_RPC_APPEND_ENTRY, rpc_arg);
+        clients_lock.unlock();
+        if (res.is_ok()) {
+            handle_append_entries_reply(target_id, arg, res.unwrap()->as<AppendEntriesReply>());
+        } else {
+            RAFT_LOG("send_append_entries to %d failed: rpc error", target_id);
+        }
+    } catch (const std::exception &e) {
+        RAFT_LOG("send_append_entries to %d exception: %s", target_id, e.what());
+    } catch (...) {
+        RAFT_LOG("send_append_entries to %d unknown exception", target_id);
     }
 }
 
@@ -775,17 +851,53 @@ template <typename StateMachine, typename Command>
 void RaftNode<StateMachine, Command>::send_install_snapshot(int target_id, InstallSnapshotArgs arg)
 {
     std::unique_lock<std::mutex> clients_lock(clients_mtx);
-    if (rpc_clients_map[target_id] == nullptr
-        || rpc_clients_map[target_id]->get_connection_state() != rpc::client::connection_state::connected) {
+    auto it = rpc_clients_map.find(target_id);
+    if (it == rpc_clients_map.end() || it->second == nullptr) {
         return;
     }
 
-    auto res = rpc_clients_map[target_id]->call(RAFT_RPC_INSTALL_SNAPSHOT, arg);
-    clients_lock.unlock();
-    if (res.is_ok()) { 
-        handle_install_snapshot_reply(target_id, arg, res.unwrap()->as<InstallSnapshotReply>());
-    } else {
-        // RPC fails
+    auto conn_state = it->second->get_connection_state();
+    if (conn_state == rpc::client::connection_state::disconnected
+        || conn_state == rpc::client::connection_state::reset) {
+        RaftNodeConfig target_cfg;
+        bool found = false;
+        for (auto &cfg : node_configs) {
+            if (cfg.node_id == target_id) {
+                target_cfg = cfg;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return;
+        }
+
+        RAFT_LOG("recreate RpcClient to %d for InstallSnapshot, prev_conn_state=%d",
+                 target_id, static_cast<int>(conn_state));
+        it->second.reset();
+        try {
+            it->second = std::make_unique<RpcClient>(target_cfg.ip_address, target_cfg.port, true);
+        } catch (const std::exception &e) {
+            RAFT_LOG("recreate RpcClient to %d failed: %s", target_id, e.what());
+            return;
+        } catch (...) {
+            RAFT_LOG("recreate RpcClient to %d failed: unknown exception", target_id);
+            return;
+        }
+    }
+
+    try {
+        auto res = it->second->call(RAFT_RPC_INSTALL_SNAPSHOT, arg);
+        clients_lock.unlock();
+        if (res.is_ok()) { 
+            handle_install_snapshot_reply(target_id, arg, res.unwrap()->as<InstallSnapshotReply>());
+        } else {
+            // RPC fails
+        }
+    } catch (const std::exception &e) {
+        RAFT_LOG("send_install_snapshot to %d exception: %s", target_id, e.what());
+    } catch (...) {
+        RAFT_LOG("send_install_snapshot to %d unknown exception", target_id);
     }
 }
 
