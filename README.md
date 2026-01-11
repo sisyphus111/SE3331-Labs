@@ -1,3 +1,6 @@
-# Lab 2: Distributed FileSystem
+## SE3331 2025-2026-1 计算机系统工程
+**代码仅供参考，请勿抄袭**
+
+Lab 2: Distributed FileSystem
 
 [Document](./docs/lab2/lab2.md)
